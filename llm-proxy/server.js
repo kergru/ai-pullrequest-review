@@ -153,12 +153,24 @@ app.post("/review", async (req, res) => {
         }
 
         const data = JSON.parse(text);
+        //console.log("RAW RESPONSE:", JSON.stringify(data, null, 2).slice(0, 2000));
+
         const outputText = extractOutputText(data);
+        const usage = data?.usage || {};
+
+        const base = {
+            output_text: outputText,
+            usage: {
+                input_tokens: usage.input_tokens || 0,
+                output_tokens: usage.output_tokens || 0,
+                total_tokens: usage.total_tokens || 0
+            }
+        };
 
         if (task === "jira_alignment") {
-            return res.json({ alignment: outputText, output_text: outputText });
+            return res.json({ alignment: outputText, output_text: outputText, ...base });
         }
-        return res.json({ review: outputText, output_text: outputText });
+        return res.json({ review: outputText, output_text: outputText, ...base });
     } catch (e) {
         res.status(500).json({ error: String(e) });
     }
