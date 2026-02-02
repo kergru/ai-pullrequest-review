@@ -1,0 +1,115 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: atlassian-postgres
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init-dbs.sql:/docker-entrypoint-initdb.d/init-dbs.sql:ro
+    restart: unless-stopped
+
+  bitbucket:
+    image: atlassian/bitbucket:latest
+    container_name: bitbucket
+    depends_on:
+      - postgres
+    ports:
+      - "7990:7990"
+      - "7999:7999"
+    environment:
+      JDBC_DRIVER: org.postgresql.Driver
+      JDBC_URL: jdbc:postgresql://postgres:5432/bitbucket
+      JDBC_USER: bitbucket
+      JDBC_PASSWORD: bitbucket
+      JVM_MINIMUM_MEMORY: 2048m
+      JVM_MAXIMUM_MEMORY: 4096m
+    volumes:
+      - bitbucket_data:/var/atlassian/application-data/bitbucket
+    restart: unless-stopped
+
+  jira:
+    image: atlassian/jira-software:latest
+    container_name: jira
+    depends_on:
+      - postgres
+    ports:
+      - "8080:8080"
+    environment:
+      ATL_JDBC_URL: jdbc:postgresql://postgres:5432/jira
+      ATL_JDBC_USER: jira
+      ATL_JDBC_PASSWORD: jira
+      JVM_MINIMUM_MEMORY: 2048m
+      JVM_MAXIMUM_MEMORY: 4096m
+    volumes:
+      - jira_data:/var/atlassian/application-data/jira
+    restart: unless-stopped
+
+  bamboo:
+    image: atlassian/bamboo:latest
+    container_name: bamboo
+    depends_on:
+      - postgres
+    ports:
+      - "8085:8085"
+    environment:
+      ATL_JDBC_URL: jdbc:postgresql://postgres:5432/bamboo
+      ATL_JDBC_USER: bamboo
+      ATL_JDBC_PASSWORD: bamboo
+      JVM_MINIMUM_MEMORY: 2048m
+      JVM_MAXIMUM_MEMORY: 3072m
+    volumes:
+      - bamboo_data:/var/atlassian/application-data/bamboo
+    restart: unless-stopped
+
+  bamboo-agent:
+    image: atlassian/bamboo-agent-base:latest
+    container_name: bamboo-agent
+    depends_on:
+      - bamboo
+    environment:
+      BAMBOO_SERVER: http://bamboo:8085/agentServer/
+    volumes:
+      - bamboo_agent_data:/home/bamboo/bamboo-agent-home
+    restart: unless-stopped
+
+  llm-proxy:
+    image: node:20-alpine
+    container_name: llm-proxy
+    working_dir: /app
+
+    # Mount Code + Prompts (Prompts explizit dabei, damit klar ist, wo sie liegen)
+    volumes:
+      - ./llm-proxy:/app
+      # optional, aber empfehlenswert: node_modules im Container behalten (schneller, weniger Windows-FS-Probleme)
+      - llm_proxy_node_modules:/app/node_modules
+
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+      MAX_DIFF_CHARS: ${MAX_DIFF_CHARS:-120000}
+      PROMPTS_DIR: /app/prompts
+      # optional:
+      # OPENAI_BASE_URL: https://api.openai.com/v1
+
+    command: ["sh", "-lc", "npm install && node server.js"]
+
+    ports:
+      - "8088:8080"
+
+    # Healthcheck ohne wget/curl (alpine hat das oft nicht), nutzt node+fetch
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  bitbucket_data:
+  jira_data:
+  bamboo_data:
+  bamboo_agent_data:
+  llm_proxy_node_modules:

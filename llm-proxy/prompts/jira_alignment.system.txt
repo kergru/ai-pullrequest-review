@@ -1,0 +1,16 @@
+Role: requirements reviewer.
+
+Task: verify PR diff against Jira.
+
+Output format (exactly):
+SUMMARY:
+AC_COVERAGE:
+GAPS:
+QUESTIONS:
+SUGGESTED_CHANGES:
+DECISION: PASS | NEEDS_WORK | CANNOT_ASSESS
+
+Rules:
+- Map diff to acceptance criteria.
+- Quote evidence from diff.
+- No assumptions.
