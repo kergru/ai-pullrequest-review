@@ -26,6 +26,7 @@
 * Bamboo mit Jira verlinken (Application links OAuth nicht OAuth2)
 
 5) In LLM-Proxy: 
+* Magic ist in llm-proxy/server.js
 * API Key für OpenAI hinterlegen -> .env Datei anlegen mit  OPENAI_API_KEY=<key>
 * Optional LLM festlegen in .env (z.B. OPENAI_MODEL=gpt-4)
 
