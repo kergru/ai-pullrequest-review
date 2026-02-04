@@ -1,13 +1,34 @@
-docker-compose.yml
+# HOWTO
 
-nachträglich remote bamboo agent hinzufügen, approve accss im bamboo server
+1) Docker Container starten über docker-compose.yml
+* Bitbucket
+* Bamboo
+* Jira
+* LLM-Proxy (für die KI Anbindung)
 
-bamboo mit bitbucket verlinken -> Incoming/Outgoing Application links OAuth nicht OAuth2
+2) In Bitbucket
+* Repository erstellen
+* Bitbucket mit bamboo verlinken (Incoming/Outgoing Application links OAuth nicht OAuth2)
+* Remote bamboo agent hinzufügen, approve access im bamboo server
 
-im Bamboo: Linked Repository einrichten
+3) In Bamboo: 
+* Bamboo mit bitbucket verlinken (Incoming/Outgoing Application links OAuth nicht OAuth2)
+* Buildplan erstellen
+* Script Task hinzufügen: llm-script-task.py
+* Linked Repository einrichten
+* JIRA Token einrichten (Plan Variable)
+* BitBucket Token einrichten  (Plan Variable)
+* Enable Buildplan
 
-Script Task Einrichten: AI Pull Request Review
+4) In Jira:
+* Projekt erstellen
+* Ticket erstellen
+* Bamboo mit Jira verlinken (Application links OAuth nicht OAuth2)
 
-Enable Builplan
+5) In LLM-Proxy: 
+* API Key für OpenAI hinterlegen -> .env Datei anlegen mit  OPENAI_API_KEY=<key>
+* Optional LLM festlegen in .env (z.B. OPENAI_MODEL=gpt-4)
+
+
 
 
