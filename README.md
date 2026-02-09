@@ -17,6 +17,7 @@ Core components:
 * Bamboo
 * Bamboo Agent
 * Jira
+* PostgreSQL (shared for Bitbucket, Bamboo and Jira)
 * LLM Proxy (AI integration)
 
 2) Bitbucket
