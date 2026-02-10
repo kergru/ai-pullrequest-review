@@ -80,6 +80,11 @@ payload={
 llm = http_post(LLM, payload, {})
 text = llm.get("alignment") or llm.get("output_text","")
 
+# Provider metadata
+meta = llm.get("meta", {})
+api = meta.get("api", "unknown-api")
+model = meta.get("model", "unknown-model")
+
 # --- metrics ---
 diff_bytes = len(diff.encode("utf-8", errors="replace"))
 diff_sha = hashlib.sha256(diff.encode("utf-8", errors="replace")).hexdigest()[:12]
@@ -104,6 +109,7 @@ lines.append("")
 lines.append("---")
 lines.append(f"- Diff bytes: `{diff_bytes}` (sha256:{diff_sha})")
 lines.append(f"- Payload chars: `{payload_chars}`")
+lines.append(f"- LLM: api `{api}` / model `{model}`")
 lines.append(f"- Tokens: in `{in_tok}` / out `{out_tok}` / total `{tot_tok}`")
 
 comment = "\n".join(lines)

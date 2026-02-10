@@ -58,3 +58,26 @@ Core components:
 * Logic resides in `llm-proxy/server.js`.
 * Provide an OpenAI API key: create a `.env` with `OPENAI_API_KEY=<key>`.
 * Optionally set the model in `.env`, e.g. `OPENAI_MODEL=gpt-4`.
+
+# AI Pull Request Review - Bamboo Script Task
+
+## Recommended CI integration
+
+Use a small shell wrapper to export Bamboo vars and call the Python script that does the work. This avoids shell parsing issues seen with inline heredocs.
+
+1) Commit these files:
+- `scripts/ai_review.bash` (shell wrapper)
+- `scripts/ai_review.py` (Python logic)
+
+2) Bamboo Script task configuration:
+- Interpreter: Shell
+- Script location: Repository
+- Script file: `scripts/ai_review.bash`
+
+Optional Bamboo variables:
+- `BB_URL` (default: `http://bitbucket:7990`)
+- `JIRA_URL` (default: `http://jira:8080`)
+- `LLM_PROXY_URL` (default: `http://llm-proxy:8080/review`)
+- `BB_TOKEN`, `JIRA_TOKEN` (scoped/secured)
+
+The script will comment on the PR (if PR id is detected) and includes the provider and model used in the output.

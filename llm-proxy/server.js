@@ -1,14 +1,49 @@
 import express from "express";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { sendRequest as sendPrimary } from "./clients/openai-client.js";
+import { sendRequest as sendLegacy } from "./clients/openai-legacy-client.js";
+
+// Define runtimeConfig before usage in overrides loader
+const runtimeConfig = {
+  legacyEnabled: String(process.env.LEGACYCLIENT_ENABLED || "false").toLowerCase() === "true",
+  maxDiffChars: Number.parseInt(process.env.MAX_DIFF_CHARS || "120000", 10),
+};
+
+// Try to load local overrides once at startup (POC-friendly; edit file and restart)
+try {
+  const localCfgPath = path.resolve(process.cwd(), "llm-proxy", "runtime.config.js");
+  const stat = await fs.stat(localCfgPath).catch(() => null);
+  if (stat && stat.isFile()) {
+    const mod = await import(pathToFileURL(localCfgPath).href);
+    const overrides = mod?.default || mod?.config || {};
+    if (typeof overrides.legacyEnabled === "boolean") runtimeConfig.legacyEnabled = overrides.legacyEnabled;
+    if (typeof overrides.maxDiffChars === "number" && Number.isFinite(overrides.maxDiffChars) && overrides.maxDiffChars > 0) {
+      runtimeConfig.maxDiffChars = Math.min(Math.floor(overrides.maxDiffChars), 1_000_000);
+    }
+    console.log("[runtime] overrides loaded from", localCfgPath, runtimeConfig);
+  } else {
+    // Also support plain JSON file as fallback
+    const jsonPath = path.resolve(process.cwd(), "llm-proxy", "runtime.config.json");
+    const jstat = await fs.stat(jsonPath).catch(() => null);
+    if (jstat && jstat.isFile()) {
+      const txt = await fs.readFile(jsonPath, "utf8");
+      const overrides = JSON.parse(txt);
+      if (typeof overrides.legacyEnabled === "boolean") runtimeConfig.legacyEnabled = overrides.legacyEnabled;
+      if (typeof overrides.maxDiffChars === "number" && Number.isFinite(overrides.maxDiffChars) && overrides.maxDiffChars > 0) {
+        runtimeConfig.maxDiffChars = Math.min(Math.floor(overrides.maxDiffChars), 1_000_000);
+      }
+      console.log("[runtime] overrides loaded from", jsonPath, runtimeConfig);
+    }
+  }
+} catch (e) {
+  console.warn("[runtime] override load failed:", e);
+}
 
 const app = express();
 app.use(express.json({ limit: "5mb" }));
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
-const MAX_DIFF_CHARS = parseInt(process.env.MAX_DIFF_CHARS || "120000", 10);
-const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
 const PROMPTS_DIR = process.env.PROMPTS_DIR || path.resolve(process.cwd(), "prompts");
 
 // Simple in-memory cache for prompt files
@@ -37,7 +72,7 @@ app.get("/health", (_req, res) => {
 });
 
 function safeSliceDiff(diff) {
-    return String(diff || "").slice(0, MAX_DIFF_CHARS);
+    return String(diff || "").slice(0, runtimeConfig.maxDiffChars);
 }
 
 function extractOutputText(data) {
@@ -58,6 +93,16 @@ function extractOutputText(data) {
         if (acc.trim()) return acc;
     }
     return "";
+}
+
+function appendProviderFooter(text, meta) {
+    try {
+        const api = meta?.api || "unknown-api";
+        const model = meta?.model || "unknown-model";
+        return `${text}\n\n---\nProvider: ${api} | Model: ${model}`;
+    } catch {
+        return text;
+    }
 }
 
 /**
@@ -124,38 +169,24 @@ async function buildMessagesForPayload(body) {
 
 app.post("/review", async (req, res) => {
     try {
-        if (!OPENAI_API_KEY) {
-            return res.status(500).json({ error: "OPENAI_API_KEY missing" });
-        }
-
+        const activeIsLegacy = runtimeConfig.legacyEnabled;
         const { diff, task } = req.body || {};
         if (!diff) {
             return res.status(400).json({ error: "diff missing" });
         }
 
         const input = await buildMessagesForPayload(req.body);
+        const client = activeIsLegacy ? sendLegacy : sendPrimary;
 
-        const r = await fetch(`${OPENAI_BASE_URL}/responses`, {
-            method: "POST",
-            headers: {
-                Authorization: `Bearer ${OPENAI_API_KEY}`,
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                model: MODEL,
-                input,
-            }),
-        });
+        console.log("[proxy] provider:", activeIsLegacy ? "legacy" : "responses", "maxDiffChars:", runtimeConfig.maxDiffChars);
 
-        const text = await r.text();
-        if (!r.ok) {
-            return res.status(r.status).json({ error: text });
+        const { data, error, status } = await client({ input });
+        if (error) {
+            return res.status(status || 500).json({ error });
         }
 
-        const data = JSON.parse(text);
-        //console.log("RAW RESPONSE:", JSON.stringify(data, null, 2).slice(0, 2000));
-
-        const outputText = extractOutputText(data);
+        let outputText = extractOutputText(data);
+        outputText = appendProviderFooter(outputText, data?.meta);
         const usage = data?.usage || {};
 
         const base = {
@@ -164,7 +195,8 @@ app.post("/review", async (req, res) => {
                 input_tokens: usage.input_tokens || 0,
                 output_tokens: usage.output_tokens || 0,
                 total_tokens: usage.total_tokens || 0
-            }
+            },
+            meta: data?.meta || undefined
         };
 
         if (task === "jira_alignment") {
@@ -191,7 +223,8 @@ app.post("/review", async (req, res) => {
 
     app.listen(8080, () => {
         console.log("llm-proxy listening on :8080");
-        console.log("Using model:", MODEL);
+        console.log("Provider mode:", runtimeConfig.legacyEnabled ? "legacy-chat-completions" : "responses-api");
+        console.log("maxDiffChars:", runtimeConfig.maxDiffChars);
         console.log("Prompts dir:", PROMPTS_DIR);
     });
 })();
